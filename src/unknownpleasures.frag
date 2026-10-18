@@ -36,13 +36,8 @@ float wavySpeed(){
     return SPEED + .4 * cos(iTime * .5) + .415 * cos(iTime * .83 + 1.7);
 }
 
-float terrainHeight(vec3 pos){
-    float t = wavyTime();
-    // Faster movement gives higher peaks and deeper valleys
-    float speedGain = .65 + .35 * wavySpeed() / 1.4;
+float terrainHeight(vec3 pos, float t, float speedGain, float sweep){
     float phase = pos.z * .5 + t;
-    // Sweep amplitude
-    float sweep = 1.3 + .7 * sin(iTime * .27) + .3 * sin(iTime * .61 + 2.1);
     float bump = cos(clamp(pos.x + sin(phase) * sweep, -PI, PI)) * .5 + .5;
     float swell = pow(abs(bump), 4.) * sin(phase) * 3.;
     // Seismic jaggedness
@@ -75,19 +70,19 @@ vec3 pixelRay(vec2 fragCoord, vec2 res, float fovDeg){
 
 float carve(float cutter, float solid){ return max(-cutter, solid); }
 
-float sceneDist(vec3 pos){
+float sceneDist(vec3 pos, float t, float speedGain, float sweep){
     float local = mod(pos.z, ROW_SPACING) - ROW_SPACING * .5;
     float slit = carve(local + HIT_EPS, local - HIT_EPS);
-    return carve(-pos.y + terrainHeight(pos), slit);
+    return carve(-pos.y + terrainHeight(pos, t, speedGain, sweep), slit);
 }
 
-float rayMarch(vec3 dir, vec3 origin){
+float rayMarch(vec3 dir, vec3 origin, float t, float speedGain, float sweep){
     // Returns the travelled distance, or -1. when nothing is hit
-    float t = 0.;
+    float travelDistance = 0.;
     for(int i = 0; i < MAX_STEPS; i++){
-        float d = sceneDist(origin + dir * t);
-        if(d < HIT_EPS) return t;
-        t += d * STEP_SCALE;
+        float d = sceneDist(origin + dir * travelDistance, t, speedGain, sweep);
+        if(d < HIT_EPS) return travelDistance;
+        travelDistance += d * STEP_SCALE;
     }
     return -1.;
 }
@@ -101,11 +96,15 @@ float heightShade(float h){
 }
 
 vec3 shade(vec3 dir, vec3 origin){
-    float t = rayMarch(dir, origin);
-    if(t < 0.) return vec3(0.);
+    float waveTime = wavyTime();
+    float speedGain = .65 + .35 * wavySpeed() / 1.4;
+    float sweep = 1.3 + .7 * sin(iTime * .27)
+                       + .3 * sin(iTime * .61 + 2.1);
+    float travelDistance = rayMarch(dir, origin, waveTime, speedGain, sweep);
+    if(travelDistance < 0.) return vec3(0.);
 
-    vec3 hitPos = origin + dir * t;
-    float h = terrainHeight(hitPos);
+    vec3 hitPos = origin + dir * travelDistance;
+    float h = terrainHeight(hitPos, waveTime, speedGain, sweep);
     float line = smoothstep(.05, 0., abs(hitPos.y - (h - .05)));
     return vec3(line * heightShade(h));
 }
